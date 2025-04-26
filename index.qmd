@@ -12,15 +12,15 @@ bibliography: references.bib
 
 ```{r}
 library(tidyverse)
+library(sf)
+library(dplyr)
+library(viridis)
+library(spdep)  
+library(ggplot2)
+library(spatialreg)
 ```
 
-## Exploratory Data Analysis
-
-```{r}
-
-```
-
-## Introduction
+## Introduction and Data
 
 We are interested in the relationship between perceived satisfaction with quality of life and length of time living in the Durham. This could be used as a measure of whether the living standards of Durham have improved over time. As secondary questions, we are interested in whether a resident being a renter or an owner affects this perceived satisfaction and whether the satisfaction of people living in the same neighborhood is independent of one another.\
 
@@ -32,13 +32,118 @@ Q3. Level of Satisfaction with Items That Influence Perceptions of Durham
 
 Q27. Approximately how many years have you lived in Durham?
 
-Q32. Do you own or rent your current residence?
+Q30. Do you own or rent your current residence?
 
 Zip
 
 PAC (Partners Against Crime)
 
-```{r}
+With respect to the spatial aspect of the data, we could potentially either use the Zip data to aggregate points together, or use the latitude and longitude data to map each point individually. But, ZIP codes are administrative, and two respondents in the same ZIP might actually live far apart (or two in adjacent ZIPs might live right next door). Using raw lat/long lets you define neighbors by real distance (e.g. everyone within 500 m or the 6 nearest neighbors), which directly captures spatial dependence at the respondent level.
 
+Try to conduct spatial weight matrix with latitude and longitude and distance-based adjacency as the adjacency metric. If it's too computationally expensive, use Zip code or PAC zone (only 5 of them) and construct the spatial weight matrix using neighbor-based adjacency.
+
+```{r}
 resident_survey <- read_csv("data/resident_survey.csv")
 ```
+
+## Cleaning
+
+```{r}
+resident_survey_cleaned <- resident_survey %>% 
+  filter(!is.na(`Block Lon`), !is.na(`Block Lat`)) %>% 
+  # convert micro-degrees → degrees
+  mutate(
+    Lon = `Block Lon` / 1e6,
+    Lat = `Block Lat` / 1e6
+  ) %>% 
+  st_as_sf(coords = c("Lon","Lat"), crs = 4326) 
+
+```
+
+```{r}
+resident_survey_cleaned <- resident_survey_cleaned %>% 
+  rename(`years_live_durham` = `Q27  Approximately how many years have y`) %>% 
+  rename(`own_rent` = `Q30  Do you own or rent your current res`) %>% 
+  mutate(
+    own_rent = factor(
+      own_rent,
+      levels = c(1, 2),
+      labels = c("Own", "Rent")
+    )
+  )
+```
+
+```{r}
+q1_cols <- grep("^Q1\\[\\d+\\]", names(resident_survey_cleaned), value=TRUE)
+```
+
+```{r}
+resident_survey_cleaned <- resident_survey_cleaned %>%
+  # 1) Convert all Q1[...] columns to numeric
+  mutate(across(all_of(q1_cols), ~ as.numeric(as.character(.)))) %>%
+  # 2) Compute the mean of those (ignoring NAs) via rowMeans
+  mutate(Q1_mean = rowMeans(across(all_of(q1_cols)), na.rm = TRUE))
+```
+
+```{r}
+durham_cnty <- st_read("data/Durham_County_boundary/Durham_County_Boundary.shp")
+```
+
+## Exploratory Data Analysis
+
+```{r}
+# Exploratory Point Map for Mean Satisfaction
+ggplot() +
+  geom_sf(data = durham_cnty,
+          fill    = "grey95",
+          color   = "grey40",
+          size    = 0.5) +
+  geom_sf(data = resident_survey_cleaned,
+          aes(color = Q1_mean),
+          size    = 1.2) +
+  scale_color_viridis_c(name = "QOL Satisfaction") +
+  labs(title = "Durham County + Survey Respondent Satisfaction") +
+  theme_minimal()
+```
+
+```{r}
+# Exploratory Point Map for Years Lived in Durham
+ggplot() +
+  geom_sf(data = durham_cnty,
+          fill    = "grey95",
+          color   = "grey40",
+          size    = 0.5) +
+  geom_sf(data = resident_survey_cleaned,
+          aes(color = years_live_durham),
+          size    = 1.2) +
+  scale_color_viridis_c(name = "Years Lived in Durham") +
+  labs(title = "Durham County + Years Lived in Durham") +
+  theme_minimal()
+```
+
+```{r}
+# Exploratory Point Map for Owners and Renters in Durham
+ggplot() +
+  geom_sf(data = durham_cnty,
+          fill    = "grey95",
+          color   = "grey40",
+          size    = 0.5) +
+  geom_sf(data = resident_survey_cleaned,
+          aes(color = own_rent),
+          size    = 1.2) +
+  scale_color_viridis_d(name = "Renters or Owners in Durham") +
+  labs(title = "Durham County + Renters or Owners in Durham") +
+  theme_minimal()
+```
+
+## Methodology
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+Obtaining a shapefile of durham is not strictly necessary for computing the distance-based spatial weight matrix, but it is good for creating publication quality figures. Also, if we want to compare points to areal models like ZIP later on, this will make the comparison easier.
