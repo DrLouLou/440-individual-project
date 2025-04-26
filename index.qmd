@@ -136,14 +136,76 @@ ggplot() +
   theme_minimal()
 ```
 
+From the map, it appears that the respondent locations are **very uneven**—a high‐density core around downtown and much sparser points out in the semi-rural north. That kind of density variation tends to **break** a fixed distance threshold (there will be rural points that have few or zero neighbors), whereas a k–NN graph will always give each point exactly “k” neighbors, keeping your weight matrix fully connected.
+
+So, it makes more sense to use k-nearest neighbors. A common rule of thumb is *k* ≈ 6–10 for a few hundred points, which ensures each rural location still borrows strength from its nearest handful of neighbors, and each downtown point isn’t swamped with dozens.
+
 ## Methodology
 
 ```{r}
+# determine hyper parameter k
+```
+
+```{r}
+set.seed(123)  # for reproducibility
+
+# 1. apply a tiny jitter to your survey points
+survey_jit <- resident_survey_cleaned %>%
+  st_jitter(amount = 1e-5)  
+
+# 2. rebuild your coords and 6-NN on the jittered points
+coords_jit <- st_coordinates(survey_jit)
+knn6_jit   <- knearneigh(coords_jit, k = 6)
+nb_knn     <- knn2nb(knn6_jit)
+
+# 3. make it symmetric, then row-standardize
+nb_sym   <- make.sym.nb(nb_knn)
+lw_knn   <- nb2listw(nb_sym, style = "W")
+
+# Confirm
+summary(nb_sym)
 
 ```
 
 ```{r}
+# Moran’s I on the raw outcome
+# tells you if spatial autocorrelation exists.
+moran_test_raw <- moran.test(
+  survey_jit$Q1_mean,
+  lw_knn
+)
+print(moran_test_raw)
 
 ```
 
+-   The global Moran’s *I* is essentially zero and non-significant (p≈0.62), so there’s no evidence of clustering in **Q1_mean**. In practice that means a **standard OLS** will suffice.
+
+```{r}
+# Fit a non-spatial baseline
+
+# OLS with your outcome Q1_mean, predictors years_live_durham and own_rent, plus any covariates
+lm0 <- lm(
+  # what other predictors to add? 
+  Q1_mean ~ years_live_durham * own_rent,
+  data = survey_jit
+)
+summary(lm0)
+```
+
+```{r}
+# confirm the OLS residuals
+moran.test(resid(lm0), lw_knn)
+
+```
+
+-   How to determine hyperparameter k?
+
+-   Those warnings and the “Non-symmetric neighbours list” message are both down to the fact that you have **identical point coordinates** (multiple respondents geocoded to the same building-centroid), which breaks the k-NN algorithm and leads to one-way neighbour links.
+
+-   Talk about the choice to do either jitter or aggregate for responses from the same location. chose to jitter because I don't want to lose data when aggregating.
+
 Obtaining a shapefile of durham is not strictly necessary for computing the distance-based spatial weight matrix, but it is good for creating publication quality figures. Also, if we want to compare points to areal models like ZIP later on, this will make the comparison easier.
+
+## Sources
+
+1.  <https://live-durhamnc.opendata.arcgis.com/datasets/durham-county-boundary/explore?location=36.051924%2C-78.878990%2C9.91>
