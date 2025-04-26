@@ -1,0 +1,44 @@
+---
+title: 440-individual-project
+authors:
+  - name: Louis Choo-Choy
+    affiliation: Duke University
+    roles: writing
+    corresponding: true
+bibliography: references.bib
+---
+
+## Packages
+
+```{r}
+library(tidyverse)
+```
+
+## Exploratory Data Analysis
+
+```{r}
+
+```
+
+## Introduction
+
+We are interested in the relationship between perceived satisfaction with quality of life and length of time living in the Durham. This could be used as a measure of whether the living standards of Durham have improved over time. As secondary questions, we are interested in whether a resident being a renter or an owner affects this perceived satisfaction and whether the satisfaction of people living in the same neighborhood is independent of one another.\
+
+Variables of relevance:
+
+Q1. Satisfaction with Major Categories of Services Provided by the City and County
+
+Q3. Level of Satisfaction with Items That Influence Perceptions of Durham
+
+Q27. Approximately how many years have you lived in Durham?
+
+Q32. Do you own or rent your current residence?
+
+Zip
+
+PAC (Partners Against Crime)
+
+```{r}
+
+resident_survey <- read_csv("data/resident_survey.csv")
+```
