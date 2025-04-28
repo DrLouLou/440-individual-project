@@ -18,11 +18,12 @@ library(viridis)
 library(spdep)  
 library(ggplot2)
 library(spatialreg)
+library(interactions)
 ```
 
 ## Introduction and Data
 
-We are interested in the relationship between perceived satisfaction with quality of life and length of time living in the Durham. This could be used as a measure of whether the living standards of Durham have improved over time. As secondary questions, we are interested in whether a resident being a renter or an owner affects this perceived satisfaction and whether the satisfaction of people living in the same neighborhood is independent of one another.\
+We are interested in the relationship between perceived satisfaction with quality of life and length of time living in Durham. This could be used as a measure of whether the living standards of Durham have improved over time. As secondary questions, we are interested in whether a resident being a renter or an owner affects this perceived satisfaction and whether the satisfaction of people living in the same neighborhood is independent of one another.
 
 Variables of relevance:
 
@@ -38,7 +39,9 @@ Zip
 
 PAC (Partners Against Crime)
 
-With respect to the spatial aspect of the data, we could potentially either use the Zip data to aggregate points together, or use the latitude and longitude data to map each point individually. But, ZIP codes are administrative, and two respondents in the same ZIP might actually live far apart (or two in adjacent ZIPs might live right next door). Using raw lat/long lets you define neighbors by real distance (e.g. everyone within 500 m or the 6 nearest neighbors), which directly captures spatial dependence at the respondent level.
+The survey data is very rich and diverse in many ways. There are survey questions ranging all the way from law enforcement and criminal justice services to transportation to city communication. It is tempting to use this diverse set of data in overly complex ways, but this is bound to result in error and poor assumptions, as when you aggregate a respondent's ratings of different aspects of Durham life, there is no way to properly weight those scores according to the person's preferences to obtain an overall quality of life satisfaction score. In addition of that, many questions intersect and subset with other questions, which adds to the complexity in aggregating scores. In Q3 however, respondents were asked to rate, using a 5-point scale, their quality of life in Durham County.
+
+\[With respect to the spatial aspect of the data, we could potentially either use the Zip data to aggregate points together, or use the latitude and longitude data to map each point individually. But, ZIP codes are administrative, and two respondents in the same ZIP might actually live far apart (or two in adjacent ZIPs might live right next door). Using raw lat/long lets you define neighbors by real distance (e.g. everyone within 500 m or the 6 nearest neighbors), which directly captures spatial dependence at the respondent level.\]
 
 Try to conduct spatial weight matrix with latitude and longitude and distance-based adjacency as the adjacency metric. If it's too computationally expensive, use Zip code or PAC zone (only 5 of them) and construct the spatial weight matrix using neighbor-based adjacency.
 
@@ -62,27 +65,32 @@ resident_survey_cleaned <- resident_survey %>%
 
 ```{r}
 resident_survey_cleaned <- resident_survey_cleaned %>% 
-  rename(`years_live_durham` = `Q27  Approximately how many years have y`) %>% 
-  rename(`own_rent` = `Q30  Do you own or rent your current res`) %>% 
-  mutate(
-    own_rent = factor(
-      own_rent,
-      levels = c(1, 2),
-      labels = c("Own", "Rent")
-    )
+  rename(
+    years_live_durham = `Q27  Approximately how many years have y`,
+    own_rent           = `Q30  Do you own or rent your current res`,
+    qol_satisfaction   = `Q3[06]  [6  Overall quality of life in D`,
+    age                = `Q28  What is your age?`,
+    gender             = `Q29  What is your gender?`,
+    hispanic           = `Q31  Are you of Hispanic  Latino  or oth`,
+    income             = `Q33  Would you say your total annual hou`,
+    inside_city        = `Inside City of Durham`
   )
 ```
 
 ```{r}
-q1_cols <- grep("^Q1\\[\\d+\\]", names(resident_survey_cleaned), value=TRUE)
-```
-
-```{r}
 resident_survey_cleaned <- resident_survey_cleaned %>%
-  # 1) Convert all Q1[...] columns to numeric
-  mutate(across(all_of(q1_cols), ~ as.numeric(as.character(.)))) %>%
-  # 2) Compute the mean of those (ignoring NAs) via rowMeans
-  mutate(Q1_mean = rowMeans(across(all_of(q1_cols)), na.rm = TRUE))
+  mutate(
+    own_rent        = factor(own_rent,      levels=c(1,2), labels=c("Own","Rent")),
+    qol_satisfaction= as.numeric(as.character(qol_satisfaction)),
+    gender          = factor(gender),
+    hispanic        = factor(hispanic,      levels=c(1,2), labels=c("Yes","No")),
+    income          = factor(income),
+    inside_city     = factor(inside_city,   levels=c("No","Yes")),
+    race_black      = as.numeric(`Q32[02]  [Black or African American]`==1),
+    race_white      = as.numeric(`Q32[04]  [White]`==1),
+    race_asian      = as.numeric(`Q32[01]  [Asian or Asian Indian]`==1),
+    race_other      = as.numeric(`Q32[06]  [Other]`==1)
+  )
 ```
 
 ```{r}
@@ -99,7 +107,7 @@ ggplot() +
           color   = "grey40",
           size    = 0.5) +
   geom_sf(data = resident_survey_cleaned,
-          aes(color = Q1_mean),
+          aes(color = qol_satisfaction),
           size    = 1.2) +
   scale_color_viridis_c(name = "QOL Satisfaction") +
   labs(title = "Durham County + Survey Respondent Satisfaction") +
@@ -144,59 +152,127 @@ So, it makes more sense to use k-nearest neighbors. A common rule of thumb is *k
 
 ```{r}
 # determine hyper parameter k
+
 ```
 
 ```{r}
-set.seed(123)  # for reproducibility
+set.seed(440)  # for reproducibility
 
-# 1. apply a tiny jitter to your survey points
-survey_jit <- resident_survey_cleaned %>%
-  st_jitter(amount = 1e-5)  
-
-# 2. rebuild your coords and 6-NN on the jittered points
+# Jitter to break duplicates, build full 6-NN
+survey_jit <- resident_survey_cleaned %>% st_jitter(amount = 1e-5)
 coords_jit <- st_coordinates(survey_jit)
-knn6_jit   <- knearneigh(coords_jit, k = 6)
-nb_knn     <- knn2nb(knn6_jit)
-
-# 3. make it symmetric, then row-standardize
-nb_sym   <- make.sym.nb(nb_knn)
-lw_knn   <- nb2listw(nb_sym, style = "W")
-
-# Confirm
-summary(nb_sym)
+knn6_full   <- knearneigh(coords_jit, k = 6)
+nb_knn_full <- knn2nb(knn6_full)
+nb_sym_full <- make.sym.nb(nb_knn_full)
+lw_knn_full <- nb2listw(nb_sym_full, style="W")
+summary(nb_sym_full)
 
 ```
 
 ```{r}
-# Moran’s I on the raw outcome
-# tells you if spatial autocorrelation exists.
-moran_test_raw <- moran.test(
-  survey_jit$Q1_mean,
-  lw_knn
+model_vars <- c("qol_satisfaction","years_live_durham","own_rent")
+cc_idx_simple <- which(
+  complete.cases(
+    st_drop_geometry(survey_jit)[, model_vars]
+  )
 )
-print(moran_test_raw)
+survey_cc <- survey_jit[cc_idx_simple, ]
+
+nrow(survey_cc)  # should be nonzero
+
+n_cc <- nrow(survey_cc)
+k_cc <- min(6, n_cc - 1)
+message("Using k = ", k_cc)
+
+coords_cc  <- as.matrix(st_coordinates(survey_cc))
+knn_cc     <- knearneigh(coords_cc, k = k_cc)
+nb_knn_cc  <- knn2nb(knn_cc)
+nb_sym_cc  <- make.sym.nb(nb_knn_cc)
+lw_knn_cc  <- nb2listw(nb_sym_cc, style="W")
 
 ```
 
--   The global Moran’s *I* is essentially zero and non-significant (p≈0.62), so there’s no evidence of clustering in **Q1_mean**. In practice that means a **standard OLS** will suffice.
-
 ```{r}
-# Fit a non-spatial baseline
-
-# OLS with your outcome Q1_mean, predictors years_live_durham and own_rent, plus any covariates
+# 5. Fit your simple OLS
 lm0 <- lm(
-  # what other predictors to add? 
-  Q1_mean ~ years_live_durham * own_rent,
-  data = survey_jit
+  qol_satisfaction ~ years_live_durham * own_rent,
+  data = survey_cc
 )
 summary(lm0)
+
 ```
 
 ```{r}
-# confirm the OLS residuals
-moran.test(resid(lm0), lw_knn)
+# 6. Moran’s I on residuals
+moran.test(resid(lm0), lw_knn_cc)
+```
+
+```{r}
+# A) Interaction plot: years_live_durham × own_rent
+ggplot(survey_cc, aes(x = years_live_durham, y = qol_satisfaction, color = own_rent)) +
+  geom_smooth(method = "lm", se = TRUE) +
+  geom_count(alpha = 0.6, show.legend = FALSE) +
+  scale_size_area(max_size = 6) +
+  scale_color_manual(values = c("Own" = "#1f78b4", "Rent" = "#e31a1c")) +
+  labs(
+    x     = "Years Lived in Durham",
+    y     = "Overall QOL Satisfaction (1–5)",
+    color = "Tenure",
+    size  = "Number of\nRespondents",
+    title = "Interaction of Tenure & Years Lived on QOL"
+  ) +
+  theme_minimal()
 
 ```
+
+```{r}
+# B) Residual spatial map
+survey_cc$resid0 <- resid(lm0)
+ggplot(survey_cc) +
+  geom_sf(aes(color = resid0), size = 1) +
+  scale_color_gradient2(
+    low      = "red",
+    mid      = "white",
+    high     = "blue",
+    midpoint = 0,
+    name     = "Residual"
+  ) +
+  labs(title = "Spatial Distribution of OLS Residuals") +
+  theme_minimal()
+```
+
+-   The red and blue points are mixed fairly randomly across Durham, with no clear pockets of one color or the other.
+
+-   This visual impression matches the global Moran’s I (≈ –0.005, p ≈ 0.58): so we can conclude there’s no significant spatial autocorrelation in the residuals.
+
+```{r}
+# C) Local Moran’s I (LISA) on qol_satisfaction
+local_mi     <- localmoran(survey_cc$qol_satisfaction, lw_knn_cc)
+survey_cc$local_I <- local_mi[,1]
+survey_cc$local_p <- local_mi[,5]
+```
+
+```{r}
+# Map only significant Local I's at α=0.05
+ggplot(survey_cc) +
+  geom_sf(aes(color = ifelse(local_p < .05, local_I, NA)), size = 1) +
+  scale_color_gradient2(
+    low      = "purple",
+    mid      = "white",
+    high     = "green",
+    midpoint = 0,
+    na.value = "grey90",
+    name     = "Local Moran’s I\n(p<0.05)"
+  ) +
+  labs(title = "Local Clusters of QOL Satisfaction") +
+  theme_minimal()
+
+
+```
+
+-   There are almost no colored points. This reinforces the global Moran’s *I* result. There aren’t any localized clusters of high or low satisfaction, and the non-spatial OLS was fine.
+
+## Notes and Questions
 
 -   How to determine hyperparameter k?
 
