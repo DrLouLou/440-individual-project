@@ -14,11 +14,13 @@ bibliography: references.bib
 library(tidyverse)
 library(sf)
 library(dplyr)
+library(knitr)
 library(viridis)
 library(spdep)  
 library(ggplot2)
 library(spatialreg)
 library(interactions)
+library(broom)
 library(MASS)
 ```
 
@@ -273,15 +275,61 @@ full_mod <- lm(
 # run stepwise AIC
 best_mod <- stepAIC(full_mod, direction = "both", trace = FALSE)
 
-# results
-summary(best_mod)
+coef_tbl <- tidy(best_mod) %>%
+  dplyr::select(term, estimate, std.error, statistic, p.value) %>%
+  dplyr::rename(
+    Term        = term,
+    Estimate    = estimate,
+    `Std. Error`= std.error,
+    `t value`   = statistic,
+    `Pr(>|t|)`  = p.value
+  )
+
+fit_tbl <- glance(best_mod) %>%
+  dplyr::select(r.squared, adj.r.squared, AIC, BIC, statistic, p.value, nobs) %>%
+  dplyr::rename(
+    `R²`            = r.squared,
+    `Adj. R²`       = adj.r.squared,
+    AIC             = AIC,
+    BIC             = BIC,
+    `F-statistic`   = statistic,
+    `Model p-value` = p.value,
+    `N obs`         = nobs
+  )
+
+kable(
+  coef_tbl,
+  digits  = c(0, 3, 3, 2, 3),
+  caption = "Coefficients of the Stepwise‐Selected OLS Model"
+)
+
+kable(
+  fit_tbl,
+  digits  = c(3, 3, 1, 1, 2, 3, 0),
+  caption = "Overall Fit Statistics for the Stepwise Model"
+)
 
 ```
 
 ```{r}
 # Moran’s I on residuals
 survey_cc$resid0 <- resid(best_mod)
-moran.test(survey_cc$resid0, lw_knn_cc)
+mi <- moran.test(survey_cc$resid0, lw_knn_cc)
+
+mi_tbl <- tibble(
+  `Moran’s I`   = unname(mi$estimate["Moran I statistic"]),
+  Expectation   = unname(mi$estimate["Expectation"]),
+  Variance      = unname(mi$estimate["Variance"]),
+  `Z‐value`     = unname(mi$statistic), 
+  `P‐value`     = mi$p.value
+)
+
+# print nicely
+kable(
+  mi_tbl,
+  digits   = c(4, 4, 6, 3, 4),
+  caption  = "Global Moran’s I on OLS Residuals"
+)
 ```
 
 ```{r}
