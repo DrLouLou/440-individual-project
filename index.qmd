@@ -19,25 +19,12 @@ library(spdep)
 library(ggplot2)
 library(spatialreg)
 library(interactions)
+library(MASS)
 ```
 
 ## Introduction and Data
 
 We are interested in the relationship between perceived satisfaction with quality of life and length of time living in Durham. This could be used as a measure of whether the living standards of Durham have improved over time. As secondary questions, we are interested in whether a resident being a renter or an owner affects this perceived satisfaction and whether the satisfaction of people living in the same neighborhood is independent of one another.
-
-Variables of relevance:
-
-Q1. Satisfaction with Major Categories of Services Provided by the City and County
-
-Q3. Level of Satisfaction with Items That Influence Perceptions of Durham
-
-Q27. Approximately how many years have you lived in Durham?
-
-Q30. Do you own or rent your current residence?
-
-Zip
-
-PAC (Partners Against Crime)
 
 The survey data is very rich and diverse in many ways. There are survey questions ranging all the way from law enforcement and criminal justice services to transportation to city communication. It is tempting to use this diverse set of data in overly complex ways, but this is bound to result in error and poor assumptions, as when you aggregate a respondent's ratings of different aspects of Durham life, there is no way to properly weight those scores according to the person's preferences to obtain an overall quality of life satisfaction score. In addition of that, many questions intersect and subset with other questions, which adds to the complexity in aggregating scores. In Q3 however, respondents were asked to rate, using a 5-point scale, their quality of life in Durham County.
 
@@ -54,7 +41,7 @@ resident_survey <- read_csv("data/resident_survey.csv")
 ```{r}
 resident_survey_cleaned <- resident_survey %>% 
   filter(!is.na(`Block Lon`), !is.na(`Block Lat`)) %>% 
-  # convert micro-degrees → degrees
+  # convert micro-degrees to degrees
   mutate(
     Lon = `Block Lon` / 1e6,
     Lat = `Block Lat` / 1e6
@@ -101,47 +88,125 @@ durham_cnty <- st_read("data/Durham_County_boundary/Durham_County_Boundary.shp")
 
 ```{r}
 # Exploratory Point Map for Mean Satisfaction
+bb         <- st_bbox(resident_survey_cleaned)
+lon_breaks <- seq(round(bb["xmin"],  2), round(bb["xmax"],  2), length.out = 6)
+lat_breaks <- seq(round(bb["ymin"],  2), round(bb["ymax"],  2), length.out = 6)
+
 ggplot() +
-  geom_sf(data = durham_cnty,
-          fill    = "grey95",
-          color   = "grey40",
-          size    = 0.5) +
-  geom_sf(data = resident_survey_cleaned,
-          aes(color = qol_satisfaction),
-          size    = 1.2) +
+  geom_sf(
+    data = durham_cnty,
+    fill  = "grey95",
+    color = "grey40",
+    size  = 0.5
+  ) +
+  geom_sf(
+    data = resident_survey_cleaned,
+    aes(color = qol_satisfaction),
+    size = 1.2
+  ) +
   scale_color_viridis_c(name = "QOL Satisfaction") +
+  coord_sf() +
+  scale_x_continuous(
+    name   = "Longitude",
+    breaks = lon_breaks,
+    oob    = scales::oob_keep
+  ) +
+  scale_y_continuous(
+    name   = "Latitude",
+    breaks = lat_breaks,
+    oob    = scales::oob_keep
+  ) +
   labs(title = "Durham County + Survey Respondent Satisfaction") +
-  theme_minimal()
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    axis.title  = element_text(size = 10),
+    plot.title  = element_text(face = "bold", hjust = 0.5)
+  )
 ```
 
 ```{r}
 # Exploratory Point Map for Years Lived in Durham
+bb <- st_bbox(resident_survey_cleaned)
+lon_breaks <- seq(round(bb["xmin"],  2), round(bb["xmax"],  2), length.out = 6)
+lat_breaks <- seq(round(bb["ymin"],  2), round(bb["ymax"],  2), length.out = 6)
+
 ggplot() +
-  geom_sf(data = durham_cnty,
-          fill    = "grey95",
-          color   = "grey40",
-          size    = 0.5) +
-  geom_sf(data = resident_survey_cleaned,
-          aes(color = years_live_durham),
-          size    = 1.2) +
+  geom_sf(
+    data = durham_cnty,
+    fill  = "grey95",
+    color = "grey40",
+    size  = 0.5
+  ) +
+  geom_sf(
+    data = resident_survey_cleaned,
+    aes(color = years_live_durham),
+    size = 1.2
+  ) +
   scale_color_viridis_c(name = "Years Lived in Durham") +
+  coord_sf() +
+  scale_x_continuous(
+    name   = "Longitude",
+    breaks = lon_breaks,
+    oob    = scales::oob_keep
+  ) +
+  scale_y_continuous(
+    name   = "Latitude",
+    breaks = lat_breaks,
+    oob    = scales::oob_keep
+  ) +
   labs(title = "Durham County + Years Lived in Durham") +
-  theme_minimal()
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    axis.title  = element_text(size = 10),
+    plot.title  = element_text(face = "bold", hjust = 0.5)
+  )
 ```
 
 ```{r}
 # Exploratory Point Map for Owners and Renters in Durham
+resident_survey_cleaned <- resident_survey_cleaned %>%
+  filter(!is.na(own_rent))
+
+bb <- st_bbox(resident_survey_cleaned)
+lon_breaks <- seq(round(bb["xmin"], 2), round(bb["xmax"], 2), length.out = 6)
+lat_breaks <- seq(round(bb["ymin"], 2), round(bb["ymax"], 2), length.out = 6)
+
 ggplot() +
-  geom_sf(data = durham_cnty,
-          fill    = "grey95",
-          color   = "grey40",
-          size    = 0.5) +
-  geom_sf(data = resident_survey_cleaned,
-          aes(color = own_rent),
-          size    = 1.2) +
-  scale_color_viridis_d(name = "Renters or Owners in Durham") +
-  labs(title = "Durham County + Renters or Owners in Durham") +
-  theme_minimal()
+  geom_sf(
+    data = durham_cnty,
+    fill  = "grey95",
+    color = "grey40",
+    size  = 0.5
+  ) +
+  geom_sf(
+    data = resident_survey_cleaned,
+    aes(color = own_rent),
+    size = 1.2
+  ) +
+  scale_color_viridis_d(
+    name = "Renters or Owners in Durham"
+  ) +
+  coord_sf() +
+  scale_x_continuous(
+  breaks = lon_breaks,
+  oob    = scales::oob_keep
+) +
+scale_y_continuous(
+  breaks = lat_breaks,
+  oob    = scales::oob_keep
+) +
+  labs(
+    title = "Durham County + Renters or Owners in Durham"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    axis.title  = element_text(size = 10),
+    plot.title  = element_text(face = "bold", hjust = 0.5)
+  )
+
 ```
 
 From the map, it appears that the respondent locations are **very uneven**—a high‐density core around downtown and much sparser points out in the semi-rural north. That kind of density variation tends to **break** a fixed distance threshold (there will be rural points that have few or zero neighbors), whereas a k–NN graph will always give each point exactly “k” neighbors, keeping your weight matrix fully connected.
@@ -182,7 +247,7 @@ cc_idx_simple <- which(
 )
 survey_cc <- survey_jit[cc_idx_simple, ]
 
-nrow(survey_cc)  # should be nonzero
+nrow(survey_cc) 
 
 n_cc <- nrow(survey_cc)
 k_cc <- min(6, n_cc - 1)
@@ -197,24 +262,26 @@ lw_knn_cc  <- nb2listw(nb_sym_cc, style="W")
 ```
 
 ```{r}
-# 5. Fit your simple OLS
-lm0 <- lm(
+# define the full baseline model
+full_mod <- lm(
   qol_satisfaction ~ 
-    years_live_durham * own_rent +  # primary variables
-    age +                           # continuous
-    gender +                        # factor
-    hispanic +                      # factor
-    income +                        # ordered factor
-    inside_city,                    # factor
+    years_live_durham * own_rent +
+    age + gender + hispanic + income + inside_city,
   data = survey_cc
 )
-summary(lm0)
+
+# run stepwise AIC
+best_mod <- stepAIC(full_mod, direction = "both", trace = FALSE)
+
+# results
+summary(best_mod)
 
 ```
 
 ```{r}
-# 6. Moran’s I on residuals
-moran.test(resid(lm0), lw_knn_cc)
+# Moran’s I on residuals
+survey_cc$resid0 <- resid(best_mod)
+moran.test(survey_cc$resid0, lw_knn_cc)
 ```
 
 ```{r}
@@ -237,7 +304,10 @@ ggplot(survey_cc, aes(x = years_live_durham, y = qol_satisfaction, color = own_r
 
 ```{r}
 # B) Residual spatial map
-survey_cc$resid0 <- resid(lm0)
+bb <- st_bbox(survey_cc)
+lon_breaks <- seq(round(bb["xmin"], 2), round(bb["xmax"], 2), length.out = 6)
+lat_breaks <- seq(round(bb["ymin"], 2), round(bb["ymax"], 2), length.out = 6)
+
 ggplot(survey_cc) +
   geom_sf(aes(color = resid0), size = 1) +
   scale_color_gradient2(
@@ -247,8 +317,22 @@ ggplot(survey_cc) +
     midpoint = 0,
     name     = "Residual"
   ) +
+  coord_sf() +
+  scale_x_continuous(
+    name   = "Longitude",
+    breaks = lon_breaks
+  ) +
+  scale_y_continuous(
+    name   = "Latitude",
+    breaks = lat_breaks
+  ) +
   labs(title = "Spatial Distribution of OLS Residuals") +
-  theme_minimal()
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    axis.title  = element_text(size = 10),
+    plot.title  = element_text(face = "bold", hjust = 0.5)
+  )
 ```
 
 -   The red and blue points are mixed fairly randomly across Durham, with no clear pockets of one color or the other.
@@ -264,6 +348,10 @@ survey_cc$local_p <- local_mi[,5]
 
 ```{r}
 # Map only significant Local I's at α=0.05
+bb <- st_bbox(survey_cc)
+lon_breaks <- seq(round(bb["xmin"], 2), round(bb["xmax"], 2), length.out = 6)
+lat_breaks <- seq(round(bb["ymin"], 2), round(bb["ymax"], 2), length.out = 6)
+
 ggplot(survey_cc) +
   geom_sf(aes(color = ifelse(local_p < .05, local_I, NA)), size = 1) +
   scale_color_gradient2(
@@ -274,9 +362,22 @@ ggplot(survey_cc) +
     na.value = "grey90",
     name     = "Local Moran’s I\n(p<0.05)"
   ) +
+  coord_sf() +
+  scale_x_continuous(
+    name   = "Longitude",
+    breaks = lon_breaks
+  ) +
+  scale_y_continuous(
+    name   = "Latitude",
+    breaks = lat_breaks
+  ) +
   labs(title = "Local Clusters of QOL Satisfaction") +
-  theme_minimal()
-
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    axis.title   = element_text(size = 10),
+    plot.title   = element_text(face = "bold", hjust = 0.5)
+  )
 
 ```
 
