@@ -85,7 +85,7 @@ resident_survey_cleaned <- resident_survey_cleaned %>%
     gender          = factor(gender),
     hispanic        = factor(hispanic,      levels=c(1,2), labels=c("Yes","No")),
     income          = factor(income),
-    inside_city     = factor(inside_city,   levels=c("No","Yes")),
+    inside_city     = factor(inside_city,   levels=c("NO","YES")),
     race_black      = as.numeric(`Q32[02]  [Black or African American]`==1),
     race_white      = as.numeric(`Q32[04]  [White]`==1),
     race_asian      = as.numeric(`Q32[01]  [Asian or Asian Indian]`==1),
@@ -151,11 +151,6 @@ So, it makes more sense to use k-nearest neighbors. A common rule of thumb is *k
 ## Methodology
 
 ```{r}
-# determine hyper parameter k
-
-```
-
-```{r}
 set.seed(440)  # for reproducibility
 
 # Jitter to break duplicates, build full 6-NN
@@ -170,7 +165,16 @@ summary(nb_sym_full)
 ```
 
 ```{r}
-model_vars <- c("qol_satisfaction","years_live_durham","own_rent")
+model_vars <- c(
+  "qol_satisfaction",
+  "years_live_durham",
+  "own_rent",
+  "age",
+  "gender",
+  "hispanic",
+  "income",
+  "inside_city"
+)
 cc_idx_simple <- which(
   complete.cases(
     st_drop_geometry(survey_jit)[, model_vars]
@@ -195,7 +199,13 @@ lw_knn_cc  <- nb2listw(nb_sym_cc, style="W")
 ```{r}
 # 5. Fit your simple OLS
 lm0 <- lm(
-  qol_satisfaction ~ years_live_durham * own_rent,
+  qol_satisfaction ~ 
+    years_live_durham * own_rent +  # primary variables
+    age +                           # continuous
+    gender +                        # factor
+    hispanic +                      # factor
+    income +                        # ordered factor
+    inside_city,                    # factor
   data = survey_cc
 )
 summary(lm0)
@@ -273,14 +283,6 @@ ggplot(survey_cc) +
 -   There are almost no colored points. This reinforces the global Moran’s *I* result. There aren’t any localized clusters of high or low satisfaction, and the non-spatial OLS was fine.
 
 ## Notes and Questions
-
--   How to determine hyperparameter k?
-
--   Those warnings and the “Non-symmetric neighbours list” message are both down to the fact that you have **identical point coordinates** (multiple respondents geocoded to the same building-centroid), which breaks the k-NN algorithm and leads to one-way neighbour links.
-
--   Talk about the choice to do either jitter or aggregate for responses from the same location. chose to jitter because I don't want to lose data when aggregating.
-
-Obtaining a shapefile of durham is not strictly necessary for computing the distance-based spatial weight matrix, but it is good for creating publication quality figures. Also, if we want to compare points to areal models like ZIP later on, this will make the comparison easier.
 
 ## Sources
 
