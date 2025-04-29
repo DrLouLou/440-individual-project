@@ -26,14 +26,6 @@ library(MASS)
 
 ## Introduction and Data
 
-We are interested in the relationship between perceived satisfaction with quality of life and length of time living in Durham. This could be used as a measure of whether the living standards of Durham have improved over time. As secondary questions, we are interested in whether a resident being a renter or an owner affects this perceived satisfaction and whether the satisfaction of people living in the same neighborhood is independent of one another.
-
-The survey data is very rich and diverse in many ways. There are survey questions ranging all the way from law enforcement and criminal justice services to transportation to city communication. It is tempting to use this diverse set of data in overly complex ways, but this is bound to result in error and poor assumptions, as when you aggregate a respondent's ratings of different aspects of Durham life, there is no way to properly weight those scores according to the person's preferences to obtain an overall quality of life satisfaction score. In addition of that, many questions intersect and subset with other questions, which adds to the complexity in aggregating scores. In Q3 however, respondents were asked to rate, using a 5-point scale, their quality of life in Durham County.
-
-\[With respect to the spatial aspect of the data, we could potentially either use the Zip data to aggregate points together, or use the latitude and longitude data to map each point individually. But, ZIP codes are administrative, and two respondents in the same ZIP might actually live far apart (or two in adjacent ZIPs might live right next door). Using raw lat/long lets you define neighbors by real distance (e.g. everyone within 500 m or the 6 nearest neighbors), which directly captures spatial dependence at the respondent level.\]
-
-Try to conduct spatial weight matrix with latitude and longitude and distance-based adjacency as the adjacency metric. If it's too computationally expensive, use Zip code or PAC zone (only 5 of them) and construct the spatial weight matrix using neighbor-based adjacency.
-
 ```{r}
 resident_survey <- read_csv("data/resident_survey.csv")
 ```
@@ -211,10 +203,6 @@ scale_y_continuous(
 
 ```
 
-From the map, it appears that the respondent locations are **very uneven**—a high‐density core around downtown and much sparser points out in the semi-rural north. That kind of density variation tends to **break** a fixed distance threshold (there will be rural points that have few or zero neighbors), whereas a k–NN graph will always give each point exactly “k” neighbors, keeping your weight matrix fully connected.
-
-So, it makes more sense to use k-nearest neighbors. A common rule of thumb is *k* ≈ 6–10 for a few hundred points, which ensures each rural location still borrows strength from its nearest handful of neighbors, and each downtown point isn’t swamped with dozens.
-
 ## Methodology
 
 ```{r}
@@ -383,10 +371,6 @@ ggplot(survey_cc) +
   )
 ```
 
--   The red and blue points are mixed fairly randomly across Durham, with no clear pockets of one color or the other.
-
--   This visual impression matches the global Moran’s I (≈ –0.005, p ≈ 0.58): so we can conclude there’s no significant spatial autocorrelation in the residuals.
-
 ```{r}
 # C) Local Moran’s I (LISA) on qol_satisfaction
 local_mi     <- localmoran(survey_cc$qol_satisfaction, lw_knn_cc)
@@ -428,11 +412,3 @@ ggplot(survey_cc) +
   )
 
 ```
-
--   There are almost no colored points. This reinforces the global Moran’s *I* result. There aren’t any localized clusters of high or low satisfaction, and the non-spatial OLS was fine.
-
-## Notes and Questions
-
-## Sources
-
-1.  <https://live-durhamnc.opendata.arcgis.com/datasets/durham-county-boundary/explore?location=36.051924%2C-78.878990%2C9.91>
